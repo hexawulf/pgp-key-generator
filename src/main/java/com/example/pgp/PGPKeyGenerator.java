@@ -3,8 +3,6 @@ package com.example.pgp;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
-import org.bouncycastle.bcpg.sig.Features;
-import org.bouncycastle.bcpg.sig.KeyFlags;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.operator.PBESecretKeyEncryptor;
@@ -21,22 +19,21 @@ import java.util.Date;
 
 /**
  * PGPKeyGenerator - A tool for generating PGP key pairs in .asc format
- * 
- * This program generates OpenPGP RSA key pairs and exports them as 
- * ASCII-armored files (.asc). It supports various customization options
- * for key size, encryption algorithm, and more.
  */
 public class PGPKeyGenerator {
 
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
     
+    // Key flag constants - defining these directly since KeyFlags may not be available
+    private static final int KEY_FLAG_SIGN_DATA = 0x02;
+    private static final int KEY_FLAG_CERTIFY_OTHER = 0x01;
+    private static final int KEY_FLAG_ENCRYPT_COMMS = 0x04;
+    private static final int KEY_FLAG_ENCRYPT_STORAGE = 0x08;
+    
     static {
         Security.addProvider(PROVIDER);
     }
 
-    /**
-     * Main method to run the key generation program
-     */
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         try {
@@ -53,6 +50,9 @@ public class PGPKeyGenerator {
             
             System.out.print("Enter a comment (optional, press Enter to skip): ");
             String comment = scanner.nextLine().trim();
+            
+            // Create filename prefix from user's name (lowercase, no spaces)
+            String filenamePrefix = name.toLowerCase().replaceAll("\\s+", "") + "_";
             
             // Construct identity
             String identity = name + " <" + email + ">";
@@ -121,9 +121,9 @@ public class PGPKeyGenerator {
             PGPPublicKey masterKey = publicKeyRing.getPublicKey();
             String keyId = Long.toHexString(masterKey.getKeyID()).toUpperCase();
             
-            // Export the keys
-            String pubKeyFile = outputDir + File.separator + "pubkey_" + keyId + ".asc";
-            String secKeyFile = outputDir + File.separator + "seckey_" + keyId + ".asc";
+            // Export the keys using the user's name as a prefix
+            String pubKeyFile = outputDir + File.separator + filenamePrefix + "pubkey_" + keyId + ".asc";
+            String secKeyFile = outputDir + File.separator + filenamePrefix + "seckey_" + keyId + ".asc";
             
             exportPublicKey(publicKeyRing, pubKeyFile);
             exportSecretKey(secretKeyRing, secKeyFile);
@@ -143,9 +143,6 @@ public class PGPKeyGenerator {
         }
     }
 
-    /**
-     * Generates a PGP key ring generator with a master signing key and an encryption subkey
-     */
     private static PGPKeyRingGenerator generateKeyRingGenerator(
             String identity, char[] passphrase, int keySize, long expiryDays) 
             throws Exception {
@@ -169,11 +166,11 @@ public class PGPKeyGenerator {
                 ? new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000L) 
                 : null;
         
-        // Set up the master key - using JcaPGPKeyPair instead of PGPKeyPair
+        // Set up the master key - using JcaPGPKeyPair
         PGPKeyPair signingKeyPgpPair = new JcaPGPKeyPair(
                 PGPPublicKey.RSA_SIGN, signingKeyPair, now);
         
-        // Set up the encryption subkey - using JcaPGPKeyPair instead of PGPKeyPair
+        // Set up the encryption subkey - using JcaPGPKeyPair
         PGPKeyPair encryptionKeyPgpPair = new JcaPGPKeyPair(
                 PGPPublicKey.RSA_ENCRYPT, encryptionKeyPair, now);
         
@@ -185,8 +182,8 @@ public class PGPKeyGenerator {
         // Create the key ring generator
         PGPSignatureSubpacketGenerator masterSubpackets = new PGPSignatureSubpacketGenerator();
         
-        // Add signing capabilities to the master key
-        masterSubpackets.setKeyFlags(false, KeyFlags.SIGN_DATA | KeyFlags.CERTIFY_OTHER);
+        // Add signing capabilities to the master key (using our constants instead of KeyFlags)
+        masterSubpackets.setKeyFlags(false, KEY_FLAG_SIGN_DATA | KEY_FLAG_CERTIFY_OTHER);
         masterSubpackets.setPreferredSymmetricAlgorithms(false, new int[]{
                 SymmetricKeyAlgorithmTags.AES_256,
                 SymmetricKeyAlgorithmTags.AES_192,
@@ -198,7 +195,6 @@ public class PGPKeyGenerator {
                 HashAlgorithmTags.SHA256,
                 HashAlgorithmTags.SHA224
         });
-        masterSubpackets.setFeature(false, Features.FEATURE_MODIFICATION_DETECTION);
         
         if (expiryDate != null) {
             masterSubpackets.setKeyExpirationTime(false, 
@@ -207,7 +203,7 @@ public class PGPKeyGenerator {
         
         // Set up the encryption subkey
         PGPSignatureSubpacketGenerator encryptionSubpackets = new PGPSignatureSubpacketGenerator();
-        encryptionSubpackets.setKeyFlags(false, KeyFlags.ENCRYPT_COMMS | KeyFlags.ENCRYPT_STORAGE);
+        encryptionSubpackets.setKeyFlags(false, KEY_FLAG_ENCRYPT_COMMS | KEY_FLAG_ENCRYPT_STORAGE);
         
         if (expiryDate != null) {
             encryptionSubpackets.setKeyExpirationTime(false, 
@@ -233,9 +229,6 @@ public class PGPKeyGenerator {
         return keyRingGenerator;
     }
 
-    /**
-     * Exports the public key to an ASCII-armored file
-     */
     private static void exportPublicKey(PGPPublicKeyRing publicKeyRing, String fileName) 
             throws IOException {
         try (ArmoredOutputStream armoredOut = new ArmoredOutputStream(new FileOutputStream(fileName))) {
@@ -244,9 +237,6 @@ public class PGPKeyGenerator {
         }
     }
 
-    /**
-     * Exports the secret key to an ASCII-armored file
-     */
     private static void exportSecretKey(PGPSecretKeyRing secretKeyRing, String fileName) 
             throws IOException {
         try (ArmoredOutputStream armoredOut = new ArmoredOutputStream(new FileOutputStream(fileName))) {
